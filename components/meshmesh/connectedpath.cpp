@@ -91,7 +91,7 @@ void ConnectedPath::loop() {
 }
 
 uint8_t ConnectedPath::sendRawRadioPacket(ConnectedPathPacket *pkt) {
-  ESP_LOGD(TAG, "ConnectedPath::sendRawRadioPacket sending to %06X %d bytes with flags %d", pkt->getTarget(),
+  ESP_LOGVV(TAG, "ConnectedPath::sendRawRadioPacket sending to %06X %d bytes with flags %d", pkt->getTarget(),
            pkt->clearDataSize(), pkt->getHeader()->flags);
   if (pkt->encryptClearData()) {
     mIsRadioBusy = true;
@@ -159,7 +159,7 @@ void ConnectedPath::enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint8
   mRadioOutputBuffer.pushData((uint8_t *) &header, sizeof(header));
   mRadioOutputBuffer.pushData(data, size);
 
-  ESP_LOGD(TAG, "ConnectedPath::enqueueRadioDataTo connid %d size %d from %06X:%04X %s to %06X:%04X", connid, size,
+  ESP_LOGVV(TAG, "ConnectedPath::enqueueRadioDataTo connid %d size %d from %06X:%04X %s to %06X:%04X", connid, size,
            mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle, FORWARD2TXT(forward),
            mConnectsions[connid].destAddr, mConnectsions[connid].destHandle);
 }
@@ -381,9 +381,16 @@ void ConnectedPath::openConnection(uint32_t from, uint16_t handle, uint16_t data
         // Ack open connection request
         sendPacket(CONNPATH_OPEN_CONNECTION_ACK, connid, REVERSE, 0, nullptr);
         // Call the handler to receive data for this port
+        bool portFound = false;
         for (ConnectedPathBindedPort_t bp : mBindedPorts) {
-          if (bp.port == port)
+          if (bp.port == port) {
             bp.handler(bp.arg, conn->sourceAddr, conn->sourceHandle);
+            portFound = true;
+          }
+        }
+        if (!portFound) {
+          ESP_LOGE(TAG, "ConnectedPath::openConnection port %d not found", port);
+          sendPacket(CONNPATH_OPEN_CONNECTION_NACK, connid, REVERSE, 0, nullptr);
         }
       }
     } else {
@@ -583,7 +590,7 @@ void ConnectedPath::processOutputBuffer() {
       ConnectedPathPacket *pkt =
           cratePacket(lastHeader.subProtocol, bufferTotalSize, lastHeader.forward ? conn->destAddr : conn->sourceAddr,
                       lastHeader.forward ? conn->destHandle : conn->sourceHandle, buffer);
-      ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer prot %d num packets %d tot size %d after %dms",
+      ESP_LOGVV(TAG, "ConnectedPath::processOutputBuffer prot %d num packets %d tot size %d after %dms",
                lastHeader.subProtocol, numPktProcessed, bufferTotalSize,
                MeshmeshComponent::elapsedMillis(now, lastHeader.pkttime));
       sendRadioPacket(pkt, false, true);
