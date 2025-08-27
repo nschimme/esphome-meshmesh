@@ -1,11 +1,11 @@
 #!/bin/bash
 
 
-declare -a arr=("esphome" "meshmesh" "network" "socket")
+declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket")
 
 for item in "${arr[@]}"; do
   echo "Update: ${item}"
-  rsync -ar ../esphome-pub/esphome/components/${item}/ components/${item} --exclude __pycache__
+  rsync -ar ../esphome-pub/esphome/components/${item}/ components/${item} --exclude __pycache__ --delete
 done
 
 
