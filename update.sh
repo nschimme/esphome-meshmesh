@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket" "ota")
+declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket")
 
 for item in "${arr[@]}"; do
   echo "Update: ${item}"
