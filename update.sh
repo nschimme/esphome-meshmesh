@@ -4,7 +4,6 @@ function update_component() {
   cd -
   declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket")
   for item in "${arr[@]}"; do
-    echo "Update: ${component}"
     rsync -ar ../esphome-pub/esphome/components/${item}/ components/${item} --exclude __pycache__ --delete
   done
   git commit -a -m "$1"
@@ -31,8 +30,9 @@ for commit in $NEW_COMMITS; do
   echo $commit
   git checkout $commit
   CURRENT_MESSAGE=$(git log -1 --pretty=%B)
-  update_component $CURRENT_MESSAGE
+  update_component "$CURRENT_MESSAGE" 
 done
+git checkout mm_dev
 git stash pop
 
 cd -
