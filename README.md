@@ -1,9 +1,29 @@
 # Meshmesh Network
 
-Meshmesh is an implementation of a protocol for mesh communication of ESPHome nodes that works on ESP8266 and ESP32 based boards and can be integrated with a Home Assistant instance. 
-The protocol is based on the 802.11B frame format and is compatible with the radio equipment of chips such as ESP32 and ESP8266.
+Meshmesh is an implementation of a protocol for mesh communication of [ESPHome](https://esphome.io/) nodes that works on ESP8266 and ESP32 based boards and can be integrated with a Home Assistant instance.  The protocol is based on the **802.11B** frame format and is compatible with the radio equipment of chips such as **ESP32** and **ESP8266**.
 
-For further explanation and tutorials, go to: [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo)
+1) Is based on the  [Esphome](https://esphome.io/) firmware
+2) It relies on raw **802.11B** packets and does not require a wifi AP to  work 
+3) The packets can make jumps on intermediate devices to extend the  range of the network. 
+4) There is not any limit on number of nodes. 
+5) Beacons are not required to maintain active the connections (less  electromagnetic pollution)
+6) Compatible with the [ESPhome](https://esphome.io/) API component 
+7) Compatible with [Home Assistant](https://www.home-assistant.io/)  trough the software HUB [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo). 
+8) It require a single [Esphome](https://esphome.io/) device connected to elaboration unit that run the [HUB](https://github.com/EspMeshMesh/meshmeshgo) software.
+9) The topology of the network is dynamic and can be changed easily
+10) Implemented from scratch not based from other mesh technologies.
+
+For further explanation and tutorials, go to: [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo) page.
+
+## Use as external component
+
+The component can be imported in existing configuration as an [external component](https://esphome.io/components/external_components/), in order to make the network work some other bundled components must be overridden. 
+
+```yaml
+external_components:
+  - source: github://EspMeshMesh/esphome-meshmesh@main
+    components: [meshmesh, meshmesh_direct, network, socket, esphome]
+```
 
 ## Meshmesh Component
 
