@@ -1,6 +1,8 @@
-# Meshmesh Network
+# [ESPMeshMesh Network](https://github.com/EspMeshMesh/esphome-meshmesh)
 
-Meshmesh is an implementation of a protocol for mesh communication of [ESPHome](https://esphome.io/) nodes that works on ESP8266 and ESP32 based boards and can be integrated with a Home Assistant instance.  The protocol is based on the **802.11B** frame format and is compatible with the radio equipment of chips such as **ESP32** and **ESP8266**.
+ESPMeshMesh is an implementation of a protocol for mesh communication of [ESPHome](https://esphome.io/) nodes that works on ESP8266 and ESP32 based boards and can be integrated with a Home Assistant instance.  The protocol is based on the **802.11B** frame format and is compatible with the radio equipment of chips such as **ESP32** and **ESP8266**.
+
+This repository contains the firmware to load on devices .
 
 1) Is based on the  [ESPHome](https://esphome.io/) firmware
 2) It relies on raw **802.11B** packets and does not require a wifi AP to  work 
