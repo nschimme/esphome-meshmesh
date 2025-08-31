@@ -76,6 +76,20 @@ meshmesh:
   channel: 3
 ```
 
+## Packet Transport Platform
+
+The MeshMesh component provide a packet transport platform implementation. 
+
+```yaml
+# Example configuration entry for packet transport over espmeshmesh.
+packet_transport:
+  platform: meshmesh
+  update_interval: 5s
+  address: 0x000000
+```
+
+* **address** (Required, int): The address for the remote node counterpart.
+
 ## Meshmesh Direct
 
 ```yaml
