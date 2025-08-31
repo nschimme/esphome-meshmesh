@@ -30,6 +30,13 @@ for commit in $NEW_COMMITS; do
   echo $commit
   git checkout $commit
   CURRENT_MESSAGE=$(git log -1 --pretty=%B)
+  CURRENT_EMAIL=$(git log -1 --pretty=%ae)
+
+  if [ "$CURRENT_EMAIL" != "stefano.pagnottelli@siralab.com" ]; then
+    echo "Commit not made by Stefano Pagnottelli, skipping"
+    continue
+  fi
+
   update_component "$CURRENT_MESSAGE" 
 done
 git checkout mm_dev
