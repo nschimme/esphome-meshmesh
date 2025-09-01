@@ -1,2 +1,5 @@
 __pycache__/
 .last_commit
+secrets.yaml
+.venv
+.esphome

@@ -1,0 +1,42 @@
+external_components:
+  - source: github://EspMeshMesh/esphome-meshmesh@main
+    components: [meshmesh, meshmesh_direct, network, socket, esphome]
+
+esphome:
+  name: coordinator
+  friendly_name: Coordinator
+  comment: Coordinator with a D1 Mini Lite board
+
+esp8266:
+  board: d1_mini_lite
+  framework:
+    version: 3.1.2
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+api:
+  reboot_timeout: 0s
+
+# Coordinator can be always updated via serial port.
+#ota:
+#  platform: esphome
+
+socket:
+  implementation: meshmesh_esp8266
+
+mdns:
+  disabled: True
+
+meshmesh:
+  baud_rate: 460800
+  rx_buffer_size: 2048
+  tx_buffer_size: 4096
+  password: !secret meshmesh_password
+  channel: 3
+
+switch:
+  - platform: gpio
+    pin: D4
+    name: "Blue LEDS"

@@ -1,0 +1,71 @@
+external_components:
+  - source: github://EspMeshMesh/esphome-meshmesh@main
+    components: [meshmesh, meshmesh_direct, network, socket, esphome]
+
+esphome:
+  name: coordinator32
+  friendly_name: Coordinator32
+  comment: Coordinator with an Olimex ESP32-EVB board
+
+esp32:
+  board: esp32-evb
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+api:
+  reboot_timeout: 0s
+
+# Coordinator can be always updated via serial port.
+#ota:
+#  platform: esphome
+
+meshmesh:
+  baud_rate: 460800
+  rx_buffer_size: 2048
+  tx_buffer_size: 4096
+  password: !secret meshmesh_password
+  channel: 3
+
+socket:
+  implementation: meshmesh_esp8266
+
+mdns:
+  disabled: True
+
+i2c:
+  sda: GPIO13
+  scl: GPIO16
+  scan: true
+  id: bus_a
+
+binary_sensor:
+  - platform: gpio
+    name: "ESP32-EVB button"
+    pin: GPIO34
+
+switch:
+  - platform: gpio
+    pin: GPIO32
+    name: "Relay1"
+
+  - platform: gpio
+    pin: GPIO33
+    name: "Relay2"
+
+#ethernet:
+#  type: LAN8720
+#  mdc_pin: GPIO23
+#  mdio_pin: GPIO18
+#  clk:
+#    pin: GPIO0
+#    mode: CLK_EXT_IN
+#  phy_addr: 0
+#
+#  manual_ip:
+#    static_ip: 10.0.0.42
+#    gateway: 10.0.0.1
+#    subnet: 255.255.255.0
