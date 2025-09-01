@@ -4,16 +4,16 @@ ESPMeshMesh is an implementation of a protocol for mesh communication of [ESPHom
 
 This repository contains the firmware to load on devices .
 
-1) Is based on the  [ESPHome](https://esphome.io/) firmware
-2) It relies on raw **802.11B** packets and does not require a wifi AP to  work 
-3) The packets can make jumps on intermediate devices to extend the  range of the network. 
-4) There is not any limit on number of nodes. 
-5) Beacons are not required to maintain active the connections (less  electromagnetic pollution)
-6) Compatible with the [ESPHome](https://esphome.io/) API component 
-7) Compatible with [Home Assistant](https://www.home-assistant.io/)  trough the software HUB [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo). 
-8) It require a single [ESPHome](https://esphome.io/) device connected to elaboration unit that run the [HUB](https://github.com/EspMeshMesh/meshmeshgo) software.
-9) The topology of the network is dynamic and can be changed easily
-10) Implemented from scratch not based from other mesh technologies.
+1. Is based on the  [ESPHome](https://esphome.io/) firmware
+2. It relies on raw **802.11B** packets and does not require a wifi AP to  work 
+3. The packets can make jumps on intermediate devices to extend the  range of the network. 
+4. There is not any limit on number of nodes. 
+5. Beacons are not required to maintain active the connections (less  electromagnetic pollution)
+6. Compatible with the [ESPHome](https://esphome.io/) API component 
+7. Compatible with [Home Assistant](https://www.home-assistant.io/)  trough the software HUB [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo). 
+8. It require a single [ESPHome](https://esphome.io/) device connected to elaboration unit that run the [HUB](https://github.com/EspMeshMesh/meshmeshgo) software.
+9. The topology of the network is dynamic and can be changed easily
+10. Implemented from scratch not based from other mesh technologies.
 
 For further explanation and tutorials, go to: [meshmeshgo](https://github.com/EspMeshMesh/meshmeshgo) page.
 
