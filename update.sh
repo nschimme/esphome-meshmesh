@@ -4,7 +4,7 @@ MY_EMAIL="stefano.pagnottelli@siralab.com"
 
 function update_component() {
   cd -
-  declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket")
+  declare -a arr=("esphome" "meshmesh" "meshmesh_direct" "network" "socket", "audio")
   for item in "${arr[@]}"; do
     rsync -ar ../esphome-pub/esphome/components/${item}/ components/${item} --exclude __pycache__ --delete
   done
