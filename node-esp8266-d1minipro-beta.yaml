@@ -77,4 +77,7 @@ binary_sensor:
     on_press:
       then:
         - lambda: id(physical_switch)->toggle();
+        - meshmesh_direct.send:
+            data: "Toggle button pressed"
+            address: ${remote_node_addr}
 
