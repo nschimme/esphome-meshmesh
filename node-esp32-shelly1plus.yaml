@@ -1,5 +1,5 @@
 external_components:
-  - source: github://persuader72/esphome@mm_dev
+  - source: github://EspMeshMesh/esphome-meshmesh@main
     components: [ meshmesh, network, socket, esphome ]
   - source: github://persuader72/esphome-components@master
     components: [ shelly_dallas ]
