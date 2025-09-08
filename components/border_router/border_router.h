@@ -30,6 +30,13 @@ class BorderRouter : public Component {
   uint16_t allocate_udp_port();
   void free_udp_port(uint16_t port);
 
+  // Packet handlers
+  void handle_tcp_connect(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
+  void handle_tcp_data(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
+  void handle_tcp_close(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
+  void handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
+  void send_error_response(uint32_t to, uint16_t session_id, uint8_t error_code);
+
   meshmesh::MeshmeshComponent *meshmesh_;
   ethernet::EthernetComponent *ethernet_;
   AsyncUDP udp_;
