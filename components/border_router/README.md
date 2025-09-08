@@ -21,16 +21,42 @@ It works by performing Network Address Translation (NAT):
 
 This architecture allows `meshmesh` nodes to access services on the IP network (like an MQTT broker or a web server) without needing a full IP stack themselves.
 
+## Current Implementation (Proof-of-Concept)
+
+The current implementation is a proof-of-concept that demonstrates the basic packet forwarding between the `meshmesh` and Ethernet networks. It does **not** yet implement the full NAT architecture described above.
+
+Instead, it provides a simple, transparent UDP bridge:
+-   Any packet received from the `meshmesh` network is broadcast as a UDP packet to `255.255.255.255` on port `12345`.
+-   Any UDP packet received on port `12345` is broadcast to all nodes on the `meshmesh` network using a "polite broadcast".
+
+This allows for basic communication, but it is not a full gateway.
+
 ## Hardware
 
 This component is designed with the **WT32-ETH01** board in mind, which provides both an ESP32 microcontroller and an Ethernet port. However, it could be adapted for other hardware with similar capabilities.
 
 ## Configuration
 
-*This section is a work in progress.*
-
 ```yaml
 # Example configuration for the border_router component
 border_router:
-  # Configuration options will be added here
+  id: border_router_1
+  meshmesh_id: meshmesh_component_id
+  ethernet_id: ethernet_component_id
+
+# You must also have the meshmesh and ethernet components configured
+meshmesh:
+  id: meshmesh_component_id
+  # ... other meshmesh config
+
+ethernet:
+  id: ethernet_component_id
+  type: LAN8720
+  # ... other ethernet config
 ```
+
+Configuration variables:
+
+*   **id** (Required, ID): The ID of the `border_router` component.
+*   **meshmesh_id** (Required, ID): The ID of the `meshmesh` component to bridge.
+*   **ethernet_id** (Required, ID): The ID of the `ethernet` component to bridge.
