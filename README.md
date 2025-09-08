@@ -27,6 +27,45 @@ external_components:
     components: [meshmesh, meshmesh_direct, network, socket, esphome]
 ```
 
+## Transparent Networking with Border Router
+
+The `border_router` component, when combined with the `border_router` socket implementation, provides transparent networking for mesh nodes. This allows standard ESPHome components (like `http_request`, `mqtt`, etc.) to work over the mesh as if they had a native IP connection.
+
+### How it Works
+
+The `border_router` socket implementation intercepts standard socket API calls made by other ESPHome components. Instead of sending them to the local network stack (which doesn't exist on the mesh nodes), it translates them into the custom "Mesh-to-Router" protocol and sends them to the `border_router` component over the mesh. The `border_router` then performs these network operations on behalf of the mesh node.
+
+### Configuration
+
+To enable this feature, you must configure both the `border_router` component on your gateway device and the `socket` implementation on your mesh nodes.
+
+**Gateway Node (`coordinator-esp32-wroom32.yaml`)**
+```yaml
+# ... other config ...
+
+# Enable the border router component
+border_router:
+  id: my_border_router
+  meshmesh_id: meshmesh_hub # The ID of your meshmesh component
+  ethernet_id: eth # The ID of your ethernet component
+```
+
+**Mesh Node (`node-esp32-wroom32s3.yaml`)**
+```yaml
+# ... other config ...
+
+# Set the socket implementation to use the border router
+socket:
+  implementation: border_router
+
+# Now, standard network components will work transparently
+http_request:
+  - id: my_http_request
+    url: http://example.com
+    on_response:
+      - logger.log: "HTTP Response received!"
+```
+
 ## Socket component override
 
 The ESPHome socket bundled component must be overridden to make the network compatible with API and OTA components.
