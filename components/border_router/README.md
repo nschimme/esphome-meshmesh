@@ -44,7 +44,7 @@ This command requests the border router to open a new TCP connection.
 
 **Payload Format:**
 -   `ip_type` (1 byte): `0x04` for IPv4, `0x06` for IPv6.
--   `ip_address` (4 or 16 bytes): The destination IP address.
+-   `ip_address` (4 or 16 bytes): The destination IPv4 or IPv6 address.
 -   `port` (2 bytes, big-endian): The destination port.
 
 #### `0x02`: TCP Data
@@ -67,7 +67,7 @@ This command sends a UDP packet.
 
 **Payload Format:**
 -   `ip_type` (1 byte): `0x04` for IPv4, `0x06` for IPv6.
--   `ip_address` (4 or 16 bytes): The destination IP address.
+-   `ip_address` (4 or 16 bytes): The destination IPv4 or IPv6 address.
 -   `port` (2 bytes, big-endian): The destination port.
 -   The raw data to be sent.
 

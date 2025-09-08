@@ -36,6 +36,8 @@ class BorderRouter : public Component {
   void handle_tcp_close(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
   void handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len);
   void send_error_response(uint32_t to, uint16_t session_id, uint8_t error_code);
+  void establish_tcp_connection(uint32_t from, uint16_t session_id, const esphome::network::IPAddress &ip_addr, uint16_t port);
+  void establish_udp_session(uint32_t from, uint16_t session_id, const esphome::network::IPAddress &ip_addr, uint16_t port, uint8_t *udp_payload, uint16_t udp_payload_len);
 
   meshmesh::MeshmeshComponent *meshmesh_;
   ethernet::EthernetComponent *ethernet_;

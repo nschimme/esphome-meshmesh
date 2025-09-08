@@ -3,6 +3,7 @@
 #include "border_router_protocol.h"
 #include "esphome/core/log.h"
 #include "esphome/components/network/ip_address.h"
+#include <vector>
 
 namespace esphome {
 namespace border_router {
@@ -14,9 +15,6 @@ void BorderRouter::setup() {
   if (this->meshmesh_) {
     this->meshmesh_->getNetwork()->addHandleFrameCb(
         std::bind(&BorderRouter::handle_mesh_packet, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-  }
-  if (this->ethernet_ && this->ethernet_->is_connected()) {
-    // Listeners are created dynamically for each session.
   }
 }
 
@@ -34,7 +32,6 @@ void BorderRouter::loop() {
         if (entry->protocol == NAT_PROTOCOL_TCP && entry->tcp_client) {
           entry->tcp_client->close(); // onDisconnect will handle the rest
         } else if (entry->protocol == NAT_PROTOCOL_UDP && entry->udp_socket) {
-          // For UDP, we need to get the port before we delete the socket
           uint16_t port = entry->udp_socket->localPort();
           this->nat_table_.remove_entry(entry); // This deletes the socket
           this->free_udp_port(port);
@@ -64,101 +61,45 @@ void BorderRouter::dump_config() {
   }
 }
 
-void BorderRouter::handle_tcp_connect(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
-  if (payload_len < 1) {
-    ESP_LOGW(TAG, "TCP_CONNECT packet too short for ip_type");
+void BorderRouter::establish_tcp_connection(uint32_t from, uint16_t session_id, const esphome::network::IPAddress &ip_addr, uint16_t port) {
+  if (this->nat_table_.find_entry(from, session_id) != nullptr) {
+    ESP_LOGW(TAG, "Session %X:%04X already exists.", from, session_id);
+    this->send_error_response(from, session_id, ERR_SESSION_EXISTS);
     return;
   }
-  uint8_t ip_type = payload[0];
-  if (ip_type == 0x04) {
-    if (payload_len < 1 + 4 + 2) {
-      ESP_LOGW(TAG, "TCP_CONNECT (IPv4) packet too short");
-      return;
-    }
-    esphome::network::IPAddress ip_addr(&payload[1], true);
-    uint16_t port = (payload[5] << 8) | payload[6];
-    ESP_LOGD(TAG, "TCP_CONNECT request for %s:%d", ip_addr.str().c_str(), port);
 
-    if (this->nat_table_.find_entry(from, session_id) != nullptr) {
-      ESP_LOGW(TAG, "Session %X:%04X already exists.", from, session_id);
-      this->send_error_response(from, session_id, ERR_SESSION_EXISTS);
-      return;
-    }
+  NATEntry *entry = this->nat_table_.create_entry(from, session_id, NAT_PROTOCOL_TCP);
+  if (entry == nullptr) {
+    ESP_LOGE(TAG, "NAT table full. Cannot create entry for %X:%04X.", from, session_id);
+    this->send_error_response(from, session_id, ERR_NAT_TABLE_FULL);
+    return;
+  }
 
-    NATEntry *entry = this->nat_table_.create_entry(from, session_id, NAT_PROTOCOL_TCP);
-    if (entry == nullptr) {
-      ESP_LOGE(TAG, "NAT table full. Cannot create entry for %X:%04X.", from, session_id);
-      this->send_error_response(from, session_id, ERR_NAT_TABLE_FULL);
-      return;
-    }
+  AsyncClient *client = new AsyncClient();
+  entry->tcp_client = client;
 
-    AsyncClient *client = new AsyncClient();
-    entry->tcp_client = client;
+  client->onData([this, entry](void *data, size_t len) { this->on_tcp_data(entry, data, len); });
+  client->onDisconnect([this, entry](void* arg) { this->on_tcp_disconnect(entry); });
+  client->onError([this, entry](void* arg, int8_t error) { this->on_tcp_disconnect(entry); });
+  client->onTimeout([this, entry](void* arg, uint32_t time) { this->on_tcp_disconnect(entry); });
 
-    client->onData([this, entry](void *data, size_t len) { this->on_tcp_data(entry, data, len); });
-    client->onDisconnect([this, entry](void* arg) { this->on_tcp_disconnect(entry); });
-    client->onError([this, entry](void* arg, int8_t error) { this->on_tcp_disconnect(entry); });
-    client->onTimeout([this, entry](void* arg, uint32_t time) { this->on_tcp_disconnect(entry); });
+  client->onConnect([this, entry](void* arg, AsyncClient* c) {
+    ESP_LOGD(TAG, "TCP connection established for %X:%04X", entry->mesh_node_id, entry->session_id);
+    std::vector<uint8_t> buffer(3);
+    buffer[0] = ROUTER_CMD_TCP_CONNECTED;
+    buffer[1] = (entry->session_id >> 8) & 0xFF;
+    buffer[2] = entry->session_id & 0xFF;
+    this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
+  });
 
-    client->onConnect([this, entry](void* arg, AsyncClient* c) {
-      ESP_LOGD(TAG, "TCP connection established for %X:%04X", entry->mesh_node_id, entry->session_id);
-      std::vector<uint8_t> buffer(3);
-      buffer[0] = ROUTER_CMD_TCP_CONNECTED;
-      buffer[1] = (entry->session_id >> 8) & 0xFF;
-      buffer[2] = entry->session_id & 0xFF;
-      this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
-    });
-
-    ESP_LOGD(TAG, "Connecting to %s:%d", ip_addr.str().c_str(), port);
-    if (!client->connect(ip_addr, port)) {
-      ESP_LOGE(TAG, "Failed to initiate TCP connection.");
-      this->nat_table_.remove_entry(entry);
-    }
-  } else if (ip_type == 0x06) {
-    ESP_LOGW(TAG, "IPv6 not yet supported");
-  } else {
-    ESP_LOGW(TAG, "Invalid ip_type in TCP_CONNECT: %02X", ip_type);
+  ESP_LOGD(TAG, "Connecting to %s:%d", ip_addr.str().c_str(), port);
+  if (!client->connect(ip_addr, port)) {
+    ESP_LOGE(TAG, "Failed to initiate TCP connection.");
+    this->nat_table_.remove_entry(entry);
   }
 }
 
-void BorderRouter::handle_tcp_data(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
-  NATEntry *entry = this->nat_table_.find_entry(from, session_id);
-  if (entry == nullptr || entry->protocol != NAT_PROTOCOL_TCP) {
-    ESP_LOGW(TAG, "Invalid session for TCP_DATA from %X:%04X", from, session_id);
-    return;
-  }
-
-  AsyncClient *client = entry->tcp_client;
-  if (client && client->canSend()) {
-    client->add((const char*)payload, payload_len);
-    entry->last_activity = millis();
-  } else {
-    ESP_LOGW(TAG, "TCP client not ready to send for %X:%04X", from, session_id);
-  }
-}
-
-void BorderRouter::handle_tcp_close(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
-  NATEntry *entry = this->nat_table_.find_entry(from, session_id);
-  if (entry == nullptr || entry->protocol != NAT_PROTOCOL_TCP) {
-    ESP_LOGW(TAG, "Invalid session for TCP_CLOSE from %X:%04X", from, session_id);
-    return;
-  }
-
-  if (entry->tcp_client) {
-    entry->tcp_client->close();
-  }
-}
-
-void BorderRouter::handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
-  if (payload_len < 1 + 4 + 2) {
-    ESP_LOGW(TAG, "UDP_SEND (IPv4) packet too short for header");
-    return;
-  }
-  esphome::network::IPAddress ip_addr(&payload[1], true);
-  uint16_t port = (payload[5] << 8) | payload[6];
-  uint8_t *udp_payload = &payload[7];
-  uint16_t udp_payload_len = payload_len - 7;
-
+void BorderRouter::establish_udp_session(uint32_t from, uint16_t session_id, const esphome::network::IPAddress &ip_addr, uint16_t port, uint8_t *udp_payload, uint16_t udp_payload_len) {
   NATEntry *entry = this->nat_table_.find_entry(from, session_id);
   if (entry == nullptr) {
     // New session
@@ -197,6 +138,8 @@ void BorderRouter::handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *
     }
 
     udp_socket->sendTo(udp_payload, udp_payload_len, ip_addr, port);
+    ESP_LOGD(TAG, "Sent initial UDP packet for new session %X:%04X", from, session_id);
+
   } else {
     // Existing session
     if (entry->protocol != NAT_PROTOCOL_UDP) {
@@ -205,11 +148,98 @@ void BorderRouter::handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *
     }
     if (entry->udp_socket) {
       entry->udp_socket->sendTo(udp_payload, udp_payload_len, ip_addr, port);
+      ESP_LOGD(TAG, "Sent UDP packet for existing session %X:%04X", from, session_id);
     }
   }
 
   if (entry) {
     entry->last_activity = millis();
+  }
+}
+
+void BorderRouter::handle_tcp_connect(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
+  if (payload_len < 1) {
+    ESP_LOGW(TAG, "TCP_CONNECT packet too short for ip_type");
+    return;
+  }
+  uint8_t ip_type = payload[0];
+  if (ip_type == 0x04) {
+    if (payload_len < 1 + 4 + 2) {
+      ESP_LOGW(TAG, "TCP_CONNECT (IPv4) packet too short");
+      return;
+    }
+    esphome::network::IPAddress ip_addr(&payload[1], true);
+    uint16_t port = (payload[5] << 8) | payload[6];
+    this->establish_tcp_connection(from, session_id, ip_addr, port);
+  } else if (ip_type == 0x06) {
+    if (payload_len < 1 + 16 + 2) {
+      ESP_LOGW(TAG, "TCP_CONNECT (IPv6) packet too short");
+      return;
+    }
+    esphome::network::IPAddress ip_addr(&payload[1], false);
+    uint16_t port = (payload[17] << 8) | payload[18];
+    this->establish_tcp_connection(from, session_id, ip_addr, port);
+  } else {
+    ESP_LOGW(TAG, "Invalid ip_type in TCP_CONNECT: %02X", ip_type);
+  }
+}
+
+void BorderRouter::handle_tcp_data(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
+  NATEntry *entry = this->nat_table_.find_entry(from, session_id);
+  if (entry == nullptr || entry->protocol != NAT_PROTOCOL_TCP) {
+    ESP_LOGW(TAG, "Invalid session for TCP_DATA from %X:%04X", from, session_id);
+    return;
+  }
+
+  AsyncClient *client = entry->tcp_client;
+  if (client && client->canSend()) {
+    client->add((const char*)payload, payload_len);
+    entry->last_activity = millis();
+  } else {
+    ESP_LOGW(TAG, "TCP client not ready to send for %X:%04X", from, session_id);
+  }
+}
+
+void BorderRouter::handle_tcp_close(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
+  NATEntry *entry = this->nat_table_.find_entry(from, session_id);
+  if (entry == nullptr || entry->protocol != NAT_PROTOCOL_TCP) {
+    ESP_LOGW(TAG, "Invalid session for TCP_CLOSE from %X:%04X", from, session_id);
+    return;
+  }
+
+  if (entry->tcp_client) {
+    entry->tcp_client->close();
+  }
+}
+
+void BorderRouter::handle_udp_send(uint32_t from, uint16_t session_id, uint8_t *payload, uint16_t payload_len) {
+  if (payload_len < 1) {
+    ESP_LOGW(TAG, "UDP_SEND packet too short for ip_type");
+    return;
+  }
+  uint8_t ip_type = payload[0];
+  if (ip_type == 0x04) {
+    if (payload_len < 1 + 4 + 2) {
+      ESP_LOGW(TAG, "UDP_SEND (IPv4) packet too short for header");
+      return;
+    }
+    esphome::network::IPAddress ip_addr(&payload[1], true);
+    uint16_t port = (payload[5] << 8) | payload[6];
+    uint8_t *udp_payload = &payload[7];
+    uint16_t udp_payload_len = payload_len - 7;
+    this->establish_udp_session(from, session_id, ip_addr, port, udp_payload, udp_payload_len);
+  } else if (ip_type == 0x06) {
+    if (payload_len < 1 + 16 + 2) {
+      ESP_LOGW(TAG, "UDP_SEND (IPv6) packet too short for header");
+      return;
+    }
+    esphome::network::IPAddress ip_addr(&payload[1], false);
+    uint16_t port = (payload[17] << 8) | payload[18];
+    uint8_t *udp_payload = &payload[19];
+    uint16_t udp_payload_len = payload_len - 19;
+    this->establish_udp_session(from, session_id, ip_addr, port, udp_payload, udp_payload_len);
+  } else {
+    ESP_LOGW(TAG, "Invalid ip_type in UDP_SEND: %02X", ip_type);
   }
 }
 
