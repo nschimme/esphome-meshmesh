@@ -75,6 +75,37 @@ This command sends a UDP packet.
 
 *This protocol is a work in progress and may be subject to change.*
 
+### Router-to-Mesh Protocol
+
+The border router uses the following protocol to send messages back to the mesh nodes.
+
+| Field        | Size (bytes) | Description                                                     |
+|--------------|--------------|-----------------------------------------------------------------|
+| `command`    | 1            | The command/event being sent. See below.                        |
+| `session_id` | 2            | The session ID of the connection this message belongs to.       |
+| `payload`    | variable     | The data for the command. The format depends on the command.    |
+
+#### `0x81`: TCP Connected
+
+Informs the mesh node that the requested TCP connection was successfully established.
+
+**Payload Format:**
+-   None.
+
+#### `0x82`: TCP Data
+
+Forwards data received from the TCP socket to the mesh node.
+
+**Payload Format:**
+-   The raw data received from the socket.
+
+#### `0x83`: TCP Disconnected
+
+Informs the mesh node that the TCP connection has been closed or has failed.
+
+**Payload Format:**
+-   None.
+
 ## Hardware
 
 This component is designed with the **WT32-ETH01** board in mind, which provides both an ESP32 microcontroller and an Ethernet port. However, it could be adapted for other hardware with similar capabilities.
