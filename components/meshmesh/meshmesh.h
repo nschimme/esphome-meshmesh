@@ -43,6 +43,7 @@ public:
   espmeshmesh::EspMeshMesh *getNetwork() { return mesh; }
   void setChannel(int channel) { mConfigChannel = channel; }
   void setAesPassword(const char *password);
+  void send_unicast(uint32_t to, const uint8_t *data, uint16_t len);
   void set_uart_selection(UARTSelection uart_selection) { /*FIXME: uart_ = uart_selection;*/}
 private:
   void defaultPreferences();

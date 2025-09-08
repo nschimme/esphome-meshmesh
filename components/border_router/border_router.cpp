@@ -105,7 +105,7 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
           buffer[1] = (entry->session_id >> 8) & 0xFF;
           buffer[2] = entry->session_id & 0xFF;
 
-          this->meshmesh_->getNetwork()->sendUnicast(entry->mesh_node_id, buffer.data(), buffer.size());
+          this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
         });
 
         ESP_LOGD(TAG, "Connecting to %s:%d", ip_addr.str().c_str(), port);
@@ -142,7 +142,24 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
       }
       break;
     }
-    case CMD_TCP_CLOSE:
+    case CMD_TCP_CLOSE: {
+      NATEntry *entry = this->nat_table_.find_entry(from, session_id);
+      if (entry == nullptr) {
+        ESP_LOGW(TAG, "No NAT entry found for TCP_CLOSE from %X:%04X", from, session_id);
+        return 0;
+      }
+      if (entry->protocol != NAT_PROTOCOL_TCP) {
+        ESP_LOGW(TAG, "Received TCP_CLOSE for a non-TCP session from %X:%04X", from, session_id);
+        return 0;
+      }
+
+      AsyncClient *client = entry->socket.tcp_client;
+      if (client) {
+        client->close();
+        ESP_LOGD(TAG, "Closing TCP connection for %X:%04X", from, session_id);
+      }
+      break;
+    }
     case CMD_UDP_SEND:
       ESP_LOGD(TAG, "Command %02X not yet implemented", command);
       break;
@@ -174,9 +191,8 @@ void BorderRouter::on_tcp_data(NATEntry *entry, void *data, size_t len) {
   memcpy(&buffer[3], data, len);
 
   // Send the packet to the mesh node
-  // NOTE: Assuming the existence of a sendUnicast(to, data, len) method.
   ESP_LOGD(TAG, "Forwarding TCP data to mesh node %X", entry->mesh_node_id);
-  this->meshmesh_->getNetwork()->sendUnicast(entry->mesh_node_id, buffer.data(), buffer.size());
+  this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
 }
 
 void BorderRouter::on_tcp_disconnect(NATEntry *entry) {
@@ -188,7 +204,7 @@ void BorderRouter::on_tcp_disconnect(NATEntry *entry) {
   buffer[1] = (entry->session_id >> 8) & 0xFF;
   buffer[2] = entry->session_id & 0xFF;
 
-  this->meshmesh_->getNetwork()->sendUnicast(entry->mesh_node_id, buffer.data(), buffer.size());
+  this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
 
   this->nat_table_.remove_entry(entry);
 }

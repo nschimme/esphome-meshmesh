@@ -100,6 +100,10 @@ void MeshmeshComponent::loop() {
   }
 }
 
+void MeshmeshComponent::send_unicast(uint32_t to, const uint8_t *data, uint16_t len) {
+  this->mesh->uniCastSendData(data, len, to);
+}
+
 int8_t MeshmeshComponent::handleFrame(uint8_t *buf, uint16_t len, uint32_t from) {
   //ESP_LOGD(TAG, "handleFrame: %d, len: %d, from: %d", buf[0], len, from);
   switch (buf[0]) {
