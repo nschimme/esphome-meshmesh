@@ -4,6 +4,7 @@
 #include "esphome/components/ethernet/ethernet_component.h"
 #include "esphome/components/meshmesh/meshmesh.h"
 #include "AsyncUDP.h"
+#include "nat_table.h"
 
 namespace esphome {
 namespace border_router {
@@ -24,6 +25,7 @@ class BorderRouter : public Component {
   meshmesh::MeshmeshComponent *meshmesh_;
   ethernet::EthernetComponent *ethernet_;
   AsyncUDP udp_;
+  NATTable nat_table_;
 };
 
 }  // namespace border_router
