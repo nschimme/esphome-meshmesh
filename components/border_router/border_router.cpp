@@ -2,7 +2,6 @@
 #include "nat_table.h"
 #include "esphome/core/log.h"
 #include "esphome/components/network/ip_address.h"
-#include <vector>
 
 namespace esphome {
 namespace border_router {
@@ -28,10 +27,8 @@ void BorderRouter::setup() {
         std::bind(&BorderRouter::handle_mesh_packet, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
   }
   if (this->ethernet_ && this->ethernet_->is_connected()) {
-    if (this->udp_.listen(12345)) {
-      ESP_LOGD(TAG, "UDP listener started on port 12345");
-      this->udp_.onPacket([this](AsyncUDPPacket &packet) { this->handle_udp_packet(packet); });
-    }
+    // The old shared listener is no longer needed.
+    // New listeners are created dynamically for each UDP session.
   }
 }
 
@@ -39,7 +36,22 @@ void BorderRouter::loop() {
   uint32_t now = millis();
   if (now - this->last_cleanup_time_ > 5000) { // Every 5 seconds
     this->last_cleanup_time_ = now;
-    this->nat_table_.cleanup();
+
+    NATEntry *entries = this->nat_table_.get_entries();
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+      NATEntry *entry = &entries[i];
+      if (entry->active && (now - entry->last_activity > NAT_ENTRY_TIMEOUT_MS)) {
+        ESP_LOGD(TAG, "NAT entry for %X:%04X timed out", entry->mesh_node_id, entry->session_id);
+        if (entry->protocol == NAT_PROTOCOL_TCP && entry->tcp_client) {
+          entry->tcp_client->close(); // onDisconnect will handle the rest
+        } else if (entry->protocol == NAT_PROTOCOL_UDP && entry->udp_socket) {
+          // For UDP, we need to get the port before we delete the socket
+          uint16_t port = entry->udp_socket->localPort();
+          this->nat_table_.remove_entry(entry); // This deletes the socket
+          this->free_udp_port(port);
+        }
+      }
+    }
   }
 }
 
@@ -177,25 +189,68 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
         uint8_t *udp_payload = &payload[7];
         uint16_t udp_payload_len = payload_len - 7;
 
-        ESP_LOGD(TAG, "UDP_SEND request for %s:%d", ip_addr.str().c_str(), port);
-
         NATEntry *entry = this->nat_table_.find_entry(from, session_id);
         if (entry == nullptr) {
+          // New session
+          ESP_LOGD(TAG, "Creating new UDP session for %X:%04X", from, session_id);
+          uint16_t local_port = this->allocate_udp_port();
+          if (local_port == 0) {
+            ESP_LOGE(TAG, "Failed to allocate UDP port for new session.");
+            return 0;
+          }
+
           entry = this->nat_table_.create_entry(from, session_id, NAT_PROTOCOL_UDP);
           if (entry == nullptr) {
-            ESP_LOGE(TAG, "Could not create NAT entry for UDP session");
+            ESP_LOGE(TAG, "Failed to create NAT entry for new UDP session.");
+            this->free_udp_port(local_port);
             return 0;
+          }
+
+          AsyncUDP *udp_socket = new AsyncUDP();
+          entry->udp_socket = udp_socket;
+
+          // This is the reply handler for this specific session
+          udp_socket->onPacket([this, entry](AsyncUDPPacket &packet) {
+            ESP_LOGD(TAG, "UDP reply received for %X:%04X", entry->mesh_node_id, entry->session_id);
+
+            // Construct the router-to-mesh packet
+            size_t packet_len = 1 + 2 + packet.length();
+            std::vector<uint8_t> buffer(packet_len);
+            buffer[0] = ROUTER_CMD_UDP_DATA;
+            buffer[1] = (entry->session_id >> 8) & 0xFF;
+            buffer[2] = entry->session_id & 0xFF;
+            memcpy(&buffer[3], packet.data(), packet.length());
+
+            // Send the packet to the mesh node
+            this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
+            entry->last_activity = millis();
+          });
+
+          if (!udp_socket->listen(local_port)) {
+            ESP_LOGE(TAG, "Failed to listen on UDP port %d", local_port);
+            this->nat_table_.remove_entry(entry); // This will also delete the udp_socket
+            this->free_udp_port(local_port);
+            return 0;
+          }
+
+          udp_socket->sendTo(udp_payload, udp_payload_len, ip_addr, port);
+          ESP_LOGD(TAG, "Sent initial UDP packet for new session %X:%04X", from, session_id);
+
+        } else {
+          // Existing session
+          if (entry->protocol != NAT_PROTOCOL_UDP) {
+            ESP_LOGW(TAG, "Received UDP_SEND for a non-UDP session from %X:%04X", from, session_id);
+            return 0;
+          }
+          AsyncUDP *udp_socket = entry->udp_socket;
+          if (udp_socket) {
+            udp_socket->sendTo(udp_payload, udp_payload_len, ip_addr, port);
+            ESP_LOGD(TAG, "Sent UDP packet for existing session %X:%04X", from, session_id);
           }
         }
 
-        // Update the destination for this session
-        entry->destination_ip = ip_addr;
-        entry->destination_port = port;
-        entry->last_activity = millis();
-
-        if (this->ethernet_ && this->ethernet_->is_connected()) {
-          this->udp_.sendTo(udp_payload, udp_payload_len, ip_addr, port);
-          ESP_LOGD(TAG, "Forwarded %d bytes from mesh to UDP socket for %X:%04X", udp_payload_len, from, session_id);
+        if (entry) {
+          entry->last_activity = millis();
         }
       } else if (ip_type == 0x06) {
         ESP_LOGW(TAG, "IPv6 not yet supported for UDP");
@@ -212,35 +267,6 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
   return 0;
 }
 
-void BorderRouter::handle_udp_packet(AsyncUDPPacket &packet) {
-  NATEntry *entries = this->nat_table_.get_entries();
-  for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
-    NATEntry *entry = &entries[i];
-    if (entry->active && entry->protocol == NAT_PROTOCOL_UDP &&
-        entry->destination_ip == packet.remoteIP() &&
-        entry->destination_port == packet.remotePort()) {
-
-      ESP_LOGD(TAG, "Found matching UDP session for %s:%d -> %X:%04X",
-               packet.remoteIP().toString().c_str(), packet.remotePort(),
-               entry->mesh_node_id, entry->session_id);
-
-      // Found the session, forward the data back to the mesh node
-      size_t packet_len = 1 + 2 + packet.length();
-      std::vector<uint8_t> buffer(packet_len);
-      buffer[0] = ROUTER_CMD_UDP_DATA;
-      buffer[1] = (entry->session_id >> 8) & 0xFF;
-      buffer[2] = entry->session_id & 0xFF;
-      memcpy(&buffer[3], packet.data(), packet.length());
-
-      this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
-      entry->last_activity = millis();
-
-      return; // Found our handler, we are done.
-    }
-  }
-
-  ESP_LOGD(TAG, "Received unsolicited UDP packet from %s:%d", packet.remoteIP().toString().c_str(), packet.length());
-}
 
 void BorderRouter::on_tcp_data(NATEntry *entry, void *data, size_t len) {
   ESP_LOGD(TAG, "TCP data received for %X:%04X, len: %d", entry->mesh_node_id, entry->session_id, len);
@@ -270,6 +296,38 @@ void BorderRouter::on_tcp_disconnect(NATEntry *entry) {
   this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
 
   this->nat_table_.remove_entry(entry);
+}
+
+const uint16_t UDP_PORT_START = 49152;
+const uint16_t UDP_PORT_END = 65535;
+
+uint16_t BorderRouter::allocate_udp_port() {
+  for (uint16_t port = UDP_PORT_START; port < UDP_PORT_END; port++) {
+    bool in_use = false;
+    for (uint16_t used_port : this->used_udp_ports_) {
+      if (port == used_port) {
+        in_use = true;
+        break;
+      }
+    }
+    if (!in_use) {
+      this->used_udp_ports_.push_back(port);
+      ESP_LOGD(TAG, "Allocated UDP port %d", port);
+      return port;
+    }
+  }
+  ESP_LOGE(TAG, "No available UDP ports to allocate!");
+  return 0;
+}
+
+void BorderRouter::free_udp_port(uint16_t port) {
+  for (auto it = this->used_udp_ports_.begin(); it != this->used_udp_ports_.end(); ++it) {
+    if (*it == port) {
+      this->used_udp_ports_.erase(it);
+      ESP_LOGD(TAG, "Freed UDP port %d", port);
+      return;
+    }
+  }
 }
 
 }  // namespace border_router
