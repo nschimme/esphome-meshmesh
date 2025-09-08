@@ -1,0 +1,70 @@
+#include "nat_table.h"
+#include "esphome/core/log.h"
+
+namespace esphome {
+namespace border_router {
+
+static const char *const TAG = "nat_table";
+
+NATEntry *NATTable::find_entry(uint32_t mesh_node_id, uint16_t session_id) {
+  for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+    if (this->entries_[i].active &&
+        this->entries_[i].mesh_node_id == mesh_node_id &&
+        this->entries_[i].session_id == session_id) {
+      return &this->entries_[i];
+    }
+  }
+  return nullptr;
+}
+
+NATEntry *NATTable::create_entry(uint32_t mesh_node_id, uint16_t session_id, NATProtocol protocol) {
+  if (this->find_entry(mesh_node_id, session_id) != nullptr) {
+    ESP_LOGW(TAG, "Entry for %X:%04X already exists", mesh_node_id, session_id);
+    return nullptr;
+  }
+
+  for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+    if (!this->entries_[i].active) {
+      NATEntry *entry = &this->entries_[i];
+      entry->active = true;
+      entry->mesh_node_id = mesh_node_id;
+      entry->session_id = session_id;
+      entry->protocol = protocol;
+      entry->last_activity = millis();
+      ESP_LOGD(TAG, "Created NAT entry for %X:%04X", mesh_node_id, session_id);
+      return entry;
+    }
+  }
+
+  ESP_LOGE(TAG, "NAT table is full!");
+  return nullptr;
+}
+
+void NATTable::remove_entry(NATEntry *entry) {
+  if (entry && entry->active) { // Check for active to prevent double-free
+    ESP_LOGD(TAG, "Removing NAT entry for %X:%04X", entry->mesh_node_id, entry->session_id);
+    if (entry->protocol == NAT_PROTOCOL_TCP && entry->socket.tcp_client) {
+      delete entry->socket.tcp_client;
+      entry->socket.tcp_client = nullptr;
+    }
+    // TODO: Handle UDP sockets
+    entry->active = false;
+  }
+}
+
+void NATTable::cleanup() {
+  uint32_t now = millis();
+  for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+    if (this->entries_[i].active) {
+      if (now - this->entries_[i].last_activity > NAT_ENTRY_TIMEOUT_MS) {
+        ESP_LOGD(TAG, "NAT entry for %X:%04X timed out", this->entries_[i].mesh_node_id, this->entries_[i].session_id);
+        // TODO: This should trigger a graceful close of the socket,
+        // which in turn will call remove_entry. For now, just remove it.
+        this->remove_entry(&this->entries_[i]);
+      }
+    }
+  }
+}
+
+}  // namespace border_router
+}  // namespace esphome

@@ -22,10 +22,15 @@ class BorderRouter : public Component {
   int8_t handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t from);
   void handle_udp_packet(AsyncUDPPacket &packet);
 
+  // TCP connection handlers
+  void on_tcp_data(NATEntry *entry, void *data, size_t len);
+  void on_tcp_disconnect(NATEntry *entry);
+
   meshmesh::MeshmeshComponent *meshmesh_;
   ethernet::EthernetComponent *ethernet_;
   AsyncUDP udp_;
   NATTable nat_table_;
+  uint32_t last_cleanup_time_{0};
 };
 
 }  // namespace border_router

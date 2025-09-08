@@ -29,7 +29,11 @@ void BorderRouter::setup() {
 }
 
 void BorderRouter::loop() {
-  // TODO: Implement the packet forwarding logic here
+  uint32_t now = millis();
+  if (now - this->last_cleanup_time_ > 5000) { // Every 5 seconds
+    this->last_cleanup_time_ = now;
+    this->nat_table_.cleanup();
+  }
 }
 
 void BorderRouter::dump_config() {
@@ -70,7 +74,27 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
         esphome::network::IPAddress ip_addr(&payload[1], true);
         uint16_t port = (payload[5] << 8) | payload[6];
         ESP_LOGD(TAG, "TCP_CONNECT request for %s:%d", ip_addr.str().c_str(), port);
-        // TODO: Create NAT entry and connect
+
+        NATEntry *entry = this->nat_table_.create_entry(from, session_id, NAT_PROTOCOL_TCP);
+        if (entry == nullptr) {
+          // Could not create entry (table full, or already exists)
+          // TODO: Send an error message back to the mesh node.
+          return 0;
+        }
+
+        AsyncClient *client = new AsyncClient();
+        entry->socket.tcp_client = client;
+
+        client->onData([this, entry](void *data, size_t len) { this->on_tcp_data(entry, data, len); });
+        client->onDisconnect([this, entry](void* arg) { this->on_tcp_disconnect(entry); });
+        client->onError([this, entry](void* arg, int8_t error) { this->on_tcp_disconnect(entry); });
+        client->onTimeout([this, entry](void* arg, uint32_t time) { this->on_tcp_disconnect(entry); });
+
+        ESP_LOGD(TAG, "Connecting to %s:%d", ip_addr.str().c_str(), port);
+        if (!client->connect(ip_addr, port)) {
+          ESP_LOGE(TAG, "Failed to initiate TCP connection.");
+          this->nat_table_.remove_entry(entry);
+        }
       } else if (ip_type == 0x06) {
         // TODO: Handle IPv6
         ESP_LOGW(TAG, "IPv6 not yet supported");
@@ -98,6 +122,18 @@ void BorderRouter::handle_udp_packet(AsyncUDPPacket &packet) {
     this->meshmesh_->getNetwork()->politeBroadcast(packet.data(), packet.length());
     ESP_LOGD(TAG, "Forwarded UDP packet to mesh broadcast");
   }
+}
+
+void BorderRouter::on_tcp_data(NATEntry *entry, void *data, size_t len) {
+  ESP_LOGD(TAG, "TCP data received for %X:%04X, len: %d", entry->mesh_node_id, entry->session_id, len);
+  // TODO: Implement router-to-mesh protocol and forward this data.
+  // This will likely involve a new command, e.g., ROUTER_TCP_DATA,
+  // and a unicast send to entry->mesh_node_id.
+}
+
+void BorderRouter::on_tcp_disconnect(NATEntry *entry) {
+  ESP_LOGD(TAG, "TCP connection closed for %X:%04X", entry->mesh_node_id, entry->session_id);
+  this->nat_table_.remove_entry(entry);
 }
 
 }  // namespace border_router
