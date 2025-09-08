@@ -43,9 +43,9 @@ NATEntry *NATTable::create_entry(uint32_t mesh_node_id, uint16_t session_id, NAT
 void NATTable::remove_entry(NATEntry *entry) {
   if (entry && entry->active) { // Check for active to prevent double-free
     ESP_LOGD(TAG, "Removing NAT entry for %X:%04X", entry->mesh_node_id, entry->session_id);
-    if (entry->protocol == NAT_PROTOCOL_TCP && entry->socket.tcp_client) {
-      delete entry->socket.tcp_client;
-      entry->socket.tcp_client = nullptr;
+    if (entry->protocol == NAT_PROTOCOL_TCP && entry->tcp_client) {
+      delete entry->tcp_client;
+      entry->tcp_client = nullptr;
     }
     // TODO: Handle UDP sockets
     entry->active = false;
@@ -58,9 +58,12 @@ void NATTable::cleanup() {
     if (this->entries_[i].active) {
       if (now - this->entries_[i].last_activity > NAT_ENTRY_TIMEOUT_MS) {
         ESP_LOGD(TAG, "NAT entry for %X:%04X timed out", this->entries_[i].mesh_node_id, this->entries_[i].session_id);
-        // TODO: This should trigger a graceful close of the socket,
-        // which in turn will call remove_entry. For now, just remove it.
-        this->remove_entry(&this->entries_[i]);
+        if (this->entries_[i].protocol == NAT_PROTOCOL_TCP && this->entries_[i].tcp_client) {
+          this->entries_[i].tcp_client->close(); // This will trigger onDisconnect, which calls remove_entry
+        } else {
+          // For UDP or other protocols, we can remove directly
+          this->remove_entry(&this->entries_[i]);
+        }
       }
     }
   }

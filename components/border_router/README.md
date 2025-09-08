@@ -106,6 +106,13 @@ Informs the mesh node that the TCP connection has been closed or has failed.
 **Payload Format:**
 -   None.
 
+#### `0x91`: UDP Data
+
+Forwards data received from a UDP socket to the mesh node. This is sent in response to a packet sent from the node with `CMD_UDP_SEND`.
+
+**Payload Format:**
+-   The raw data received from the socket.
+
 ## Hardware
 
 This component is designed with the **WT32-ETH01** board in mind, which provides both an ESP32 microcontroller and an Ethernet port. However, it could be adapted for other hardware with similar capabilities.

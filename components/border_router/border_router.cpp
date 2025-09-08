@@ -17,6 +17,7 @@ const uint8_t CMD_UDP_SEND = 0x11;
 const uint8_t ROUTER_CMD_TCP_CONNECTED = 0x81;
 const uint8_t ROUTER_CMD_TCP_DATA = 0x82;
 const uint8_t ROUTER_CMD_TCP_DISCONNECTED = 0x83;
+const uint8_t ROUTER_CMD_UDP_DATA = 0x91;
 
 static const char *const TAG = "border_router";
 
@@ -160,9 +161,49 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
       }
       break;
     }
-    case CMD_UDP_SEND:
-      ESP_LOGD(TAG, "Command %02X not yet implemented", command);
+    case CMD_UDP_SEND: {
+      if (payload_len < 1) {
+        ESP_LOGW(TAG, "UDP_SEND packet too short for ip_type");
+        return 0;
+      }
+      uint8_t ip_type = payload[0];
+      if (ip_type == 0x04) {
+        if (payload_len < 1 + 4 + 2) {
+          ESP_LOGW(TAG, "UDP_SEND (IPv4) packet too short for header");
+          return 0;
+        }
+        esphome::network::IPAddress ip_addr(&payload[1], true);
+        uint16_t port = (payload[5] << 8) | payload[6];
+        uint8_t *udp_payload = &payload[7];
+        uint16_t udp_payload_len = payload_len - 7;
+
+        ESP_LOGD(TAG, "UDP_SEND request for %s:%d", ip_addr.str().c_str(), port);
+
+        NATEntry *entry = this->nat_table_.find_entry(from, session_id);
+        if (entry == nullptr) {
+          entry = this->nat_table_.create_entry(from, session_id, NAT_PROTOCOL_UDP);
+          if (entry == nullptr) {
+            ESP_LOGE(TAG, "Could not create NAT entry for UDP session");
+            return 0;
+          }
+        }
+
+        // Update the destination for this session
+        entry->destination_ip = ip_addr;
+        entry->destination_port = port;
+        entry->last_activity = millis();
+
+        if (this->ethernet_ && this->ethernet_->is_connected()) {
+          this->udp_.sendTo(udp_payload, udp_payload_len, ip_addr, port);
+          ESP_LOGD(TAG, "Forwarded %d bytes from mesh to UDP socket for %X:%04X", udp_payload_len, from, session_id);
+        }
+      } else if (ip_type == 0x06) {
+        ESP_LOGW(TAG, "IPv6 not yet supported for UDP");
+      } else {
+        ESP_LOGW(TAG, "Invalid ip_type in UDP_SEND: %02X", ip_type);
+      }
       break;
+    }
     default:
       ESP_LOGW(TAG, "Unknown command: %02X", command);
       break;
@@ -172,11 +213,33 @@ int8_t BorderRouter::handle_mesh_packet(uint8_t *buf, uint16_t len, uint32_t fro
 }
 
 void BorderRouter::handle_udp_packet(AsyncUDPPacket &packet) {
-  ESP_LOGD(TAG, "Received UDP packet from %s, len: %d", packet.remoteIP().toString().c_str(), packet.length());
-  if (this->meshmesh_) {
-    this->meshmesh_->getNetwork()->politeBroadcast(packet.data(), packet.length());
-    ESP_LOGD(TAG, "Forwarded UDP packet to mesh broadcast");
+  NATEntry *entries = this->nat_table_.get_entries();
+  for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+    NATEntry *entry = &entries[i];
+    if (entry->active && entry->protocol == NAT_PROTOCOL_UDP &&
+        entry->destination_ip == packet.remoteIP() &&
+        entry->destination_port == packet.remotePort()) {
+
+      ESP_LOGD(TAG, "Found matching UDP session for %s:%d -> %X:%04X",
+               packet.remoteIP().toString().c_str(), packet.remotePort(),
+               entry->mesh_node_id, entry->session_id);
+
+      // Found the session, forward the data back to the mesh node
+      size_t packet_len = 1 + 2 + packet.length();
+      std::vector<uint8_t> buffer(packet_len);
+      buffer[0] = ROUTER_CMD_UDP_DATA;
+      buffer[1] = (entry->session_id >> 8) & 0xFF;
+      buffer[2] = entry->session_id & 0xFF;
+      memcpy(&buffer[3], packet.data(), packet.length());
+
+      this->meshmesh_->send_unicast(entry->mesh_node_id, buffer.data(), buffer.size());
+      entry->last_activity = millis();
+
+      return; // Found our handler, we are done.
+    }
   }
+
+  ESP_LOGD(TAG, "Received unsolicited UDP packet from %s:%d", packet.remoteIP().toString().c_str(), packet.length());
 }
 
 void BorderRouter::on_tcp_data(NATEntry *entry, void *data, size_t len) {
