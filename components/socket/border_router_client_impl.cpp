@@ -46,7 +46,7 @@ int8_t border_router_client_packet_handler(uint8_t *buf, uint16_t len, uint32_t 
       socket->on_error(payload[0]);
       break;
     case esphome::border_router::ROUTER_CMD_UDP_DATA:
-      // TODO: Handle UDP data
+      socket->on_data(payload, payload_len);
       break;
   }
 
@@ -177,19 +177,90 @@ ssize_t BorderRouterClientImpl::write(const void *buf, size_t len) {
 }
 
 // Stub implementations for other methods
-std::unique_ptr<Socket> BorderRouterClientImpl::accept(struct sockaddr *addr, socklen_t *addrlen) { return nullptr; }
-int BorderRouterClientImpl::bind(const struct sockaddr *name, socklen_t addrlen) { return -1; }
-int BorderRouterClientImpl::listen(int backlog) { return -1; }
-int BorderRouterClientImpl::shutdown(int how) { return 0; }
-int BorderRouterClientImpl::getpeername(struct sockaddr *name, socklen_t *addrlen) { return 0; }
+std::unique_ptr<Socket> BorderRouterClientImpl::accept(struct sockaddr *addr, socklen_t *addrlen) {
+  errno = EOPNOTSUPP;
+  return nullptr;
+}
+int BorderRouterClientImpl::bind(const struct sockaddr *name, socklen_t addrlen) {
+  errno = EOPNOTSUPP;
+  return -1;
+}
+int BorderRouterClientImpl::listen(int backlog) {
+  errno = EOPNOTSUPP;
+  return -1;
+}
+int BorderRouterClientImpl::shutdown(int how) {
+  return this->close();
+}
+int BorderRouterClientImpl::getpeername(struct sockaddr *name, socklen_t *addrlen) {
+  // Not supported
+  return 0;
+}
 std::string BorderRouterClientImpl::getpeername() { return ""; }
-int BorderRouterClientImpl::getsockname(struct sockaddr *name, socklen_t *addrlen) { return 0; }
+int BorderRouterClientImpl::getsockname(struct sockaddr *name, socklen_t *addrlen) {
+  // Not supported
+  return 0;
+}
 std::string BorderRouterClientImpl::getsockname() { return ""; }
-int BorderRouterClientImpl::getsockopt(int level, int optname, void *optval, socklen_t *optlen) { return 0; }
-int BorderRouterClientImpl::setsockopt(int level, int optname, const void *optval, socklen_t optlen) { return 0; }
-ssize_t BorderRouterClientImpl::readv(const struct iovec *iov, int iovcnt) { return 0; }
-ssize_t BorderRouterClientImpl::writev(const struct iovec *iov, int iovcnt) { return 0; }
-ssize_t BorderRouterClientImpl::sendto(const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) { return 0; }
+int BorderRouterClientImpl::getsockopt(int level, int optname, void *optval, socklen_t *optlen) {
+  errno = EOPNOTSUPP;
+  return -1;
+}
+int BorderRouterClientImpl::setsockopt(int level, int optname, const void *optval, socklen_t optlen) {
+  if (level == SOL_SOCKET && optname == SO_RCVTIMEO) {
+    if (optlen != sizeof(struct timeval)) {
+      errno = EINVAL;
+      return -1;
+    }
+    const struct timeval *tv = (const struct timeval *)optval;
+    this->recv_timeout_ms_ = (tv->tv_sec * 1000) + (tv->tv_usec / 1000);
+    ESP_LOGD(TAG, "Set recv timeout to %d ms", this->recv_timeout_ms_);
+    return 0;
+  }
+  errno = EOPNOTSUPP;
+  return -1;
+}
+ssize_t BorderRouterClientImpl::readv(const struct iovec *iov, int iovcnt) {
+  errno = EOPNOTSUPP;
+  return -1;
+}
+ssize_t BorderRouterClientImpl::writev(const struct iovec *iov, int iovcnt) {
+  errno = EOPNOTSUPP;
+  return -1;
+}
+ssize_t BorderRouterClientImpl::sendto(const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) {
+  if (to->sa_family != AF_INET) {
+    errno = EAFNOSUPPORT;
+    return -1;
+  }
+  const struct sockaddr_in *addr_in = reinterpret_cast<const struct sockaddr_in *>(to);
+
+  // 1 (cmd) + 2 (session) + 1 (ip_type) + 4 (ip) + 2 (port) + len (payload)
+  std::vector<uint8_t> buffer(len + 10);
+  buffer[0] = esphome::border_router::CMD_UDP_SEND;
+  buffer[1] = (this->session_id_ >> 8) & 0xFF;
+  buffer[2] = this->session_id_ & 0xFF;
+  buffer[3] = 0x04; // IPv4
+  buffer[4] = (addr_in->sin_addr.s_addr >> 0) & 0xFF;
+  buffer[5] = (addr_in->sin_addr.s_addr >> 8) & 0xFF;
+  buffer[6] = (addr_in->sin_addr.s_addr >> 16) & 0xFF;
+  buffer[7] = (addr_in->sin_addr.s_addr >> 24) & 0xFF;
+  buffer[8] = (addr_in->sin_port >> 8) & 0xFF;
+  buffer[9] = addr_in->sin_port & 0xFF;
+  memcpy(&buffer[10], buf, len);
+
+  uint32_t border_router_address = 0; // Assuming coordinator
+  meshmesh::global_meshmesh_component->send_unicast(border_router_address, buffer.data(), buffer.size());
+
+  return len;
+}
+
+ssize_t BorderRouterClientImpl::recvfrom(void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen) {
+  // For this implementation, recvfrom is the same as read.
+  // We don't have a way to know the original sender from the border router protocol.
+  return this->read(buf, len);
+}
+
 int BorderRouterClientImpl::setblocking(bool blocking) { return 0; }
 
 void BorderRouterClientImpl::on_connected() {

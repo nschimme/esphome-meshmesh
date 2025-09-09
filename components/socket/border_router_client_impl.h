@@ -30,6 +30,7 @@ class BorderRouterClientImpl : public Socket {
   ssize_t readv(const struct iovec *iov, int iovcnt) override;
   ssize_t writev(const struct iovec *iov, int iovcnt) override;
   ssize_t sendto(const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) override;
+  ssize_t recvfrom(void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen) override;
   int setblocking(bool blocking) override;
 
   // Public methods for the global handler to use
@@ -45,6 +46,7 @@ class BorderRouterClientImpl : public Socket {
   bool connect_result_ready_{false};
   uint8_t connect_error_{0};
   std::queue<uint8_t> rx_buffer_;
+  uint32_t recv_timeout_ms_{0};
 };
 
 }  // namespace socket
