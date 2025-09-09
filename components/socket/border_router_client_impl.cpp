@@ -95,9 +95,7 @@ int BorderRouterClientImpl::connect(const struct sockaddr *name, socklen_t addrl
   buffer.push_back((addr_in->sin_port >> 8) & 0xFF);
   buffer.push_back(addr_in->sin_port & 0xFF);
 
-  // For now, assume the border router is the coordinator (address 0)
-  // This needs a better mechanism in a real implementation.
-  uint32_t border_router_address = 0;
+  uint32_t border_router_address = USE_BORDER_ROUTER_ADDRESS;
   meshmesh::global_meshmesh_component->send_unicast(border_router_address, buffer.data(), buffer.size());
 
   this->connect_result_ready_ = false;
@@ -130,7 +128,7 @@ int BorderRouterClientImpl::close() {
   buffer[1] = (this->session_id_ >> 8) & 0xFF;
   buffer[2] = this->session_id_ & 0xFF;
 
-  uint32_t border_router_address = 0; // Assuming coordinator
+  uint32_t border_router_address = USE_BORDER_ROUTER_ADDRESS;
   meshmesh::global_meshmesh_component->send_unicast(border_router_address, buffer.data(), buffer.size());
 
   this->is_connected_ = false;
@@ -170,7 +168,7 @@ ssize_t BorderRouterClientImpl::write(const void *buf, size_t len) {
   buffer[2] = this->session_id_ & 0xFF;
   memcpy(&buffer[3], buf, len);
 
-  uint32_t border_router_address = 0; // Assuming coordinator
+  uint32_t border_router_address = USE_BORDER_ROUTER_ADDRESS;
   meshmesh::global_meshmesh_component->send_unicast(border_router_address, buffer.data(), buffer.size());
 
   return len;
@@ -249,7 +247,7 @@ ssize_t BorderRouterClientImpl::sendto(const void *buf, size_t len, int flags, c
   buffer[9] = addr_in->sin_port & 0xFF;
   memcpy(&buffer[10], buf, len);
 
-  uint32_t border_router_address = 0; // Assuming coordinator
+  uint32_t border_router_address = USE_BORDER_ROUTER_ADDRESS;
   meshmesh::global_meshmesh_component->send_unicast(border_router_address, buffer.data(), buffer.size());
 
   return len;

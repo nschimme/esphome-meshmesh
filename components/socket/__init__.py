@@ -5,6 +5,7 @@ from esphome.core import CORE
 CODEOWNERS = ["@esphome/core"]
 
 CONF_IMPLEMENTATION = "implementation"
+CONF_BORDER_ROUTER_ADDRESS = "border_router_address"
 IMPLEMENTATION_LWIP_TCP = "lwip_tcp"
 IMPLEMENTATION_LWIP_SOCKETS = "lwip_sockets"
 IMPLEMENTATION_BSD_SOCKETS = "bsd_sockets"
@@ -33,6 +34,7 @@ CONFIG_SCHEMA = cv.Schema(
             lower=True,
             space="_",
         ),
+        cv.Optional(CONF_BORDER_ROUTER_ADDRESS): cv.positive_int,
     }
 )
 
@@ -53,6 +55,18 @@ async def to_code(config):
         cg.add_define("USE_SOCKET_IMPL_MESHMESH_8266")
     elif impl == IMPLEMENTATION_BORDER_ROUTER:
         cg.add_define("USE_SOCKET_IMPL_BORDER_ROUTER")
+        if CONF_BORDER_ROUTER_ADDRESS in config:
+            address = config[CONF_BORDER_ROUTER_ADDRESS]
+            cg.add_define("USE_BORDER_ROUTER_ADDRESS", address)
+        else:
+            raise cv.Invalid(
+                "The 'border_router_address' must be provided when using the 'border_router' socket implementation."
+            )
+
+    if CONF_BORDER_ROUTER_ADDRESS in config and impl != IMPLEMENTATION_BORDER_ROUTER:
+        raise cv.Invalid(
+            "The 'border_router_address' can only be used with the 'border_router' socket implementation."
+        )
 
 
 def FILTER_SOURCE_FILES() -> list[str]:

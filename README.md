@@ -57,6 +57,7 @@ border_router:
 # Set the socket implementation to use the border router
 socket:
   implementation: border_router
+  border_router_address: 0x123456 # Address of the node running the border_router
 
 # Now, standard network components will work transparently
 http_request:
