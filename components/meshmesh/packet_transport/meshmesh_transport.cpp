@@ -25,11 +25,11 @@ void MeshmeshTransport::update() {
 void MeshmeshTransport::send_packet(const std::vector<uint8_t> &buf) const {
   uint8_t *buff = new uint8_t[buf.size()+1];
   buff[0] = CMD_PACKET_TRANSPORT_REQ;
-  memcpy(buff+2, buf.data(), buf.size());
+  memcpy(buff+1, buf.data(), buf.size());
   if(this->address_ != 0)
-    this->parent_->getNetwork()->uniCastSendData(buf.data(), buf.size(), this->address_);
+    this->parent_->getNetwork()->uniCastSendData(buff.data(), buff.size(), this->address_);
   else
-    this->parent_->getNetwork()->broadCastSendData(buf.data(), buf.size());
+    this->parent_->getNetwork()->broadCastSendData(buff.data(), buff.size());
   delete[] buff;
 }
 
